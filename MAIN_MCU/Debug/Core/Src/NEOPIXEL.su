@@ -1,0 +1,4 @@
+../Core/Src/NEOPIXEL.c:15:6:setPixelColor	16	static
+../Core/Src/NEOPIXEL.c:23:6:setBrightness	16	static
+../Core/Src/NEOPIXEL.c:27:6:pixelShow	32	static
+../Core/Src/NEOPIXEL.c:57:6:pixelClear	16	static
