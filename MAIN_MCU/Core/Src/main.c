@@ -71,6 +71,10 @@ const uint16_t space_y[8] = {58, 100, 140, 180,   60, 100, 140, 180};
 const uint16_t line_x[8]  = {80,  80,  80,  80,  130, 130, 130, 130};
 
 const uint16_t line_y[8]  = {60, 100, 140, 180,   60, 100, 140, 180};
+
+volatile uint8_t exti_idx = 255;
+volatile uint32_t last_exti_time = 0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -204,19 +208,19 @@ int main(void)
   while (1)
   {
 //REVISAR SI LLEGO UN DATO
-      if (flag_update) {
-          flag_update = 0;
-          uint8_t target = space_to_update;
-          space_to_update = 255;
+	  if (flag_update) {
+	          flag_update = 0;
+	          uint8_t target = space_to_update;
+	          space_to_update = 255;
 
-//CAMBIAR DE ESTADO
-          parking_state[target] = !parking_state[target];
+	      //AHORA ESTA EN LA INTERRUPCION
+          //parking_state[target] = !parking_state[target];
 
-//ASIGNAR CARRO ALEATORIO
-          if (parking_state[target]) {
-              car_assigned[target] = rand() % 4;
-              car_flip[target]     = rand() % 2;
-          }
+//AHORA ESTA EN LA INTERRUPCION
+//          if (parking_state[target]) {
+//              car_assigned[target] = rand() % 4;
+//              car_flip[target]     = rand() % 2;
+//          }
 
           Update_Space(target);
           pixelShow();
@@ -522,8 +526,8 @@ static void MX_GPIO_Init(void)
   /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOC_CLK_ENABLE();
+  __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
@@ -543,6 +547,14 @@ static void MX_GPIO_Init(void)
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(SD_SS_GPIO_Port, SD_SS_Pin, GPIO_PIN_SET);
+
+  /*Configure GPIO pins : PC13 PC14 PC15 PC2
+                           PC3 PC4 PC5 PC9 */
+  GPIO_InitStruct.Pin = GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_15|GPIO_PIN_2
+                          |GPIO_PIN_3|GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_9;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /*Configure GPIO pin : PC0 */
   GPIO_InitStruct.Pin = GPIO_PIN_0;
@@ -582,6 +594,22 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
   HAL_GPIO_Init(SD_SS_GPIO_Port, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI2_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI2_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI3_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI3_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI4_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI4_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI9_5_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
@@ -636,6 +664,38 @@ void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *htim) {
     if (htim->Instance == TIM1 && htim->Channel == HAL_TIM_ACTIVE_CHANNEL_4) {
         HAL_TIM_PWM_Stop_DMA(&htim1, TIM_CHANNEL_4);
     }
+}
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
+    uint32_t now = HAL_GetTick();
+    if (now - last_exti_time < 200) return;
+    last_exti_time = now;
+
+    uint8_t idx = 255;
+
+    switch (GPIO_Pin) {
+        case GPIO_PIN_3:  idx = 0; break;
+        case GPIO_PIN_2:  idx = 1; break;
+        case GPIO_PIN_13: idx = 2; break;
+        case GPIO_PIN_14: idx = 3; break;
+        case GPIO_PIN_15: idx = 4; break;
+        case GPIO_PIN_4:  idx = 5; break;
+        case GPIO_PIN_5:  idx = 6; break;
+        case GPIO_PIN_9:  idx = 7; break;
+        default: return;
+    }
+
+    uint8_t lectura = HAL_GPIO_ReadPin(GPIOC, GPIO_Pin);
+
+    if (lectura == GPIO_PIN_RESET) {
+        parking_state[idx] = 1;
+        car_assigned[idx] = rand() % 4;
+        car_flip[idx] = rand() % 2;
+    } else {
+        parking_state[idx] = 0;
+    }
+
+    space_to_update = idx;
+    flag_update = 1;
 }
 /* USER CODE END 4 */
 
