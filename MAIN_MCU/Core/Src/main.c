@@ -43,6 +43,8 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+I2C_HandleTypeDef hi2c1;
+
 SPI_HandleTypeDef hspi1;
 
 TIM_HandleTypeDef htim1;
@@ -53,6 +55,14 @@ UART_HandleTypeDef huart4;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
+#define TxBufferSize	8
+#define RxBufferSize	4
+
+int count = 0;
+
+uint8_t aTxBuffer[TxBufferSize] = {0};
+uint8_t aRxBuffer[RxBufferSize];
+
 uint8_t rxData;
 uint8_t flag_update = 0;
 uint8_t space_to_update = 255;
@@ -86,6 +96,7 @@ static void MX_USART2_UART_Init(void);
 static void MX_TIM6_Init(void);
 static void MX_UART4_Init(void);
 static void MX_TIM1_Init(void);
+static void MX_I2C1_Init(void);
 /* USER CODE BEGIN PFP */
 void Draw_Parking_Area(uint16_t px, uint16_t py, uint16_t w, uint16_t h);
 void Update_Space(uint8_t idx);
@@ -117,12 +128,14 @@ void Update_Space(uint8_t idx) {
         Draw_Parking_Area(line_x[idx], line_y[idx], 28, 28);
         LCD_Sprite(line_x[idx], line_y[idx], 28, 28, L_V, 1, 0, 0, 0);
         setPixelColor(idx, 0, 255, 0);
+        aTxBuffer[idx] = 0;
     } else {
         // ESPACIO OCUPADO
         Draw_Parking_Area(line_x[idx], line_y[idx], 28, 28);
         LCD_Sprite(space_x[idx], space_y[idx], 42, 22, car_bitmaps[car_assigned[idx]], 1, 0, car_flip[idx], 0);
         LCD_Sprite(line_x[idx], line_y[idx], 28, 28, L_R, 1, 0, 0, 0);
         setPixelColor(idx, 255, 0, 0);
+        aTxBuffer[idx] = 1;
     }
 }
 
@@ -181,6 +194,7 @@ int main(void)
   MX_TIM6_Init();
   MX_UART4_Init();
   MX_TIM1_Init();
+  MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
 //INICIALIZAR PANTALLA
   LCD_Init();
@@ -201,6 +215,15 @@ int main(void)
 
 //INICIAR LA RECEPCION POR UART
   HAL_UART_Receive_IT(&huart2, &rxData, 1);
+
+  // COMUNICACION I2C
+  aTxBuffer[0] = 1;
+  aTxBuffer[4] = 1;
+  aTxBuffer[5] = 1;
+  aTxBuffer[6] = 1;
+  if (HAL_I2C_EnableListen_IT(&hi2c1) != HAL_OK) {
+  	  Error_Handler();
+    }
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -279,6 +302,40 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief I2C1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C1_Init(void)
+{
+
+  /* USER CODE BEGIN I2C1_Init 0 */
+
+  /* USER CODE END I2C1_Init 0 */
+
+  /* USER CODE BEGIN I2C1_Init 1 */
+
+  /* USER CODE END I2C1_Init 1 */
+  hi2c1.Instance = I2C1;
+  hi2c1.Init.ClockSpeed = 100000;
+  hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
+  hi2c1.Init.OwnAddress1 = 38;
+  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c1.Init.OwnAddress2 = 0;
+  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C1_Init 2 */
+
+  /* USER CODE END I2C1_Init 2 */
+
 }
 
 /**
@@ -696,6 +753,42 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 
     space_to_update = idx;
     flag_update = 1;
+}
+
+//Cuando termine alguna lectura, volver a colocar listo la escucha a algun llamado
+void HAL_I2C_ListenCpltCallback(I2C_HandleTypeDef *hi2c){
+	HAL_I2C_EnableListen_IT(hi2c);
+}
+
+void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection, uint16_t AddrMatchCode){
+	// para trasmitir datos del maestro al esclavo
+	if (TransferDirection == I2C_DIRECTION_TRANSMIT) {
+		if (HAL_I2C_Slave_Seq_Receive_IT(&hi2c1, (uint8_t*) aRxBuffer, 1, I2C_FIRST_AND_LAST_FRAME) != HAL_OK) {
+			/* Transfer error in reception process */
+			Error_Handler();
+		}
+	}
+	else if (TransferDirection == I2C_DIRECTION_RECEIVE) {
+		//para trasmitir datos del esclavo al maestro
+		if (HAL_I2C_Slave_Seq_Transmit_IT(&hi2c1, (uint8_t*) aTxBuffer, 8, I2C_FIRST_AND_LAST_FRAME) != HAL_OK) {
+			Error_Handler();
+		}
+
+	}
+}
+
+void HAL_I2C_SlaveTxCpltCallback(I2C_HandleTypeDef *I2cHandle){
+	//se podria colocar logica para saber si se transmitireon lso datos
+}
+
+void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *I2cHandle) {
+    /* Error_Handler() function is called when error occurs.
+     * 1- When Slave doesn't acknowledge its address, Master restarts communication.
+     * 2- When Master doesn't acknowledge the last data transferred, Slave doesn't care in this example.
+     */
+    if (HAL_I2C_GetError(I2cHandle) != HAL_I2C_ERROR_AF) {
+        Error_Handler();
+    }
 }
 /* USER CODE END 4 */
 
