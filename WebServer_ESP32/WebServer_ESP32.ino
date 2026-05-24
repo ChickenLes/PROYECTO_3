@@ -15,8 +15,8 @@
 // Variables globales
 //************************************************************************************************
 // SSID & Password
-const char* ssid = "vayne_8923";  // Enter your SSID here
-const char* password = "6573105524";  //Enter your Password here
+const char* ssid = "ID";  // Enter your SSID here
+const char* password = "";  //Enter your Password here
 
 WebServer server(80);  // Object of WebServer(HTTP port, 80 is defult)
 
